@@ -15,6 +15,8 @@ Quick setup instructions
     (autoload 'perl-lint "perl-lint-mode" nil t)
     (autoload 'perl-lint-mode "perl-lint-mode" nil t)
 
+  To enable fully automatic operation also add the following snippet.
+
     ; Makes perl-lint-mode automatic for cperl-mode
     (eval-after-load "cperl-mode"
       '(add-hook 'cperl-mode-hook 'perl-lint-mode))

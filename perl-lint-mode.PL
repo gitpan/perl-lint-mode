@@ -26,7 +26,7 @@ __DATA__
 ;;; Copyright 2006 Joshua ben Jore
 
 ;;; Author: Joshua ben Jore <jjore@cpan.org>
-;;; Version: 0.01
+;;; Version: 0.02
 ;;; CVS Version: $Id$
 ;;; Keywords: perl B::Lint
 ;;; X-URL: http://search.cpan.org/~jjore/perl-lint-mode/
@@ -34,12 +34,19 @@ __DATA__
 ;;; This program is free software; you can redistribute it and/or
 ;;; modify it under the same terms as Perl itself.
 
-;;; Add the following to your .emacs file to cause cperl-mode to automatically
-;;; trigger perl-lint-mode as well.
+;;; To use this, add the following code to your .emacs file and copy
+;;; perl-lint-mode.el to your ~/.site-lisp/ directory.
 ;;;
-;;; ; Automatically enable perl-lint-mode for cperl-mode
-;;; (eval-after-load "cperl-mode"
-;;;  '(add-hook 'cperl-mode-hook 'perl-lint-mode))
+;;;   (add-to-list 'load-path "~/.site-lisp/")
+;;;   (autoload 'perl-lint "perl-lint-mode" nil t)
+;;;   (autoload 'perl-lint-mode "perl-lint-mode" nil t)
+;;;
+;;; To use this automatically when cperl-mode is enabled, also add the
+;;; following code to your .emacs file.
+;;;
+;;;   ; Automatically enable perl-lint-mode for cperl-mode
+;;;   (eval-after-load "cperl-mode"
+;;;     '(add-hook 'cperl-mode-hook 'perl-lint-mode))
 
 
 (require 'cl)
@@ -67,12 +74,19 @@ displayed in an adjacent buffer."
     (save-excursion
       (let ((input-buf (current-buffer))
             (lint-buf (get-buffer-create "*Lint check*"))
-            (interpreter (perl-interpreter perl-lint-bin)))
+            (interpreter (progn
+                           ; Steal the shebang or use a default.
+                           (goto-char (point-min))
+                           (if (looking-at auto-mode-interpreter-regexp)
+                               (match-string 2)
+                             perl-lint-bin))))
+        
 
         ; Clear the lint buffer if it needs it.
-        (or (zerop (buffer-size lint-buf))
-            (set-buffer lint-buf)
-            (erase-buffer))
+        (if (zerop (buffer-size lint-buf))
+            nil
+          (set-buffer lint-buf)
+          (erase-buffer))
         
         ; Run B::Lint on the current buffer using whatever checks the
         ; user would like.
@@ -80,37 +94,41 @@ displayed in an adjacent buffer."
         (let ((rc (call-process-region
                    (point-min) (point-max)
                    interpreter nil
-                   (list lint-buf t) nil (reduce (lambda (l r) (concat l "," r))
-                                                 (cons "-MO=Lint" perl-lint-checks)))))
+                   (list lint-buf t) nil
+                   (reduce (lambda (l r) (concat l "," r))
+                           (cons "-MO=Lint" perl-lint-checks)))))
           
           ; Check that the B::Lint succeeded or clean up the error
           ; messages it posted.
           (set-buffer lint-buf)
           (goto-char (point-min))
           (if (numberp rc)
-              (if (zerop rc)
-                   ; If I get this far, it is at least syntactically
-                   ; valid.
-                   (progn
-                     ; I'm frequently switching between different
-                     ; Lints with different abilities so I've set
-                     ; checks that don't always exist. This just
-                     ; removes the warning.
-                     (or perl-lint-ignore-bad-checks
-                         (delete-matching-lines "^No such check: "))
-                     ; Remove all the Lint lines for things that are
-                     ; in files named anything other than "-". When I
-                     ; feed the buffer to Lint, the file is named -
-                     ; because it comes from STDIN.  Also remove the
-                     ; "Syntax ok" message.
-                     (call-process-region
-                      (point-min) (point-max)
-                      interpreter t
-                      (list lint-buf t)
-                      t "-0777" "-pe"
-                      (concat "s/.+ at (?!-).+ line \\d+\\.?\\n//g"
-                              ";"
-                              "s/^- syntax OK\\n//"))))
+              (if (not (zerop rc))
+                  ; A non-zero exit, likely a syntax error. I'll leave
+                  ; anything in the lint-buffer there.
+                  t
+
+                ; If I get this far, it is at least syntactically
+                ; valid.
+
+                ; I'm frequently switching between different
+                ; Lints with different abilities so I've set
+                ; checks that don't always exist. This just
+                ; removes the warning.
+                (or perl-lint-ignore-bad-checks
+                    (delete-matching-lines "^No such check: "))
+                ; Remove all the Lint lines for things that are in
+                ; files named anything other than "-". When I feed the
+                ; buffer to Lint, the file is named - because it comes
+                ; from STDIN.  Also remove the "Syntax ok" message.
+                (call-process-region
+                 (point-min) (point-max)
+                 interpreter t
+                 (list lint-buf t)
+                 t "-0777" "-pe"
+                 (concat "s/.+ at (?!-).+ line \\d+\\.?\\n//g"
+                         ";"
+                         "s/^- syntax OK\\n//")))
             ; Sometimes non-numeric results come back. I'm just
             ; bailing and inserting them for the user
             ; to deal with.
@@ -133,9 +151,6 @@ displayed in an adjacent buffer."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;                              Lint mode
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-
-
 (defvar perl-lint-mode nil
   "Check perl lint before saving.")
 (make-variable-buffer-local 'perl-lint-mode)
@@ -173,6 +188,5 @@ displayed in an adjacent buffer."
           (cons '(perl-lint-mode " Lint")
                 minor-mode-alist)))
 
-(provide 'perl-lint-mode)
 
-;;; perl-lint-mode.el ends here
+(provide 'perl-lint-mode)
